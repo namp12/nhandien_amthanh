@@ -110,17 +110,20 @@ function DashboardTab() {
         body: formData,
       });
       const data = await res.json();
-      setProcessingId(data.file_id || "demo-abc");
-      setStatus("processing");
-    } catch (err) {
-      alert("Tính năng Upload File gốc chưa được API hỗ trợ hoàn toàn. Chuyển sang Demo ngẫu nhiên.");
-      setTimeout(() => {
+
+      if (data.status === "ok") {
         setResult({
-          transcript: [{ speaker: "Nam", text: "Alo 123", start: 0 }, { speaker: "Thầy", text: "Nghe rõ", start: 2 }],
-          minutes: "### Biên bản Upload\nUpload thành công."
+          transcript: data.transcript || [],
+          minutes: data.minutes || "Không có nội dung."
         });
         setStatus("done");
-      }, 2000);
+      } else {
+        alert("Lỗi khi xử lý âm thanh: " + (data.error || "Unknown error"));
+        setStatus("idle");
+      }
+    } catch (err) {
+      alert("Lỗi kết nối tới Server AI Offline.");
+      setStatus("idle");
     } finally {
       setUploading(false);
     }

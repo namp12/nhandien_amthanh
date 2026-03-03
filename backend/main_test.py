@@ -23,9 +23,14 @@ os.makedirs(RESULT_DIR, exist_ok=True)
 import database as db
 from trigger_detector import check_start_trigger, check_stop_trigger
 
-# Import Gemini LLM processor
 from llm_processor import MeetingLLMProcessor
 llm_proc = MeetingLLMProcessor(api_key=GEMINI_API_KEY)
+
+from audio_processor import MeetingAudioProcessor
+audio_processor = MeetingAudioProcessor(
+    hf_token=os.getenv("HF_TOKEN"), 
+    groq_key=os.getenv("GROQ_API_KEY")
+)
 
 app = FastAPI(title="Meeting Minutes API [TEST MODE]")
 app.add_middleware(
@@ -199,6 +204,34 @@ async def api_upload_voice(meeting_id: int = Form(...), file: UploadFile = File(
     db.update_meeting_paths(meeting_id, audio_path=path)
     print(f"[DB] Da luu audio chunk vao: {path}")
     return {"status": "ok", "path": path}
+
+@app.post("/upload-audio")
+async def api_upload_audio(file: UploadFile = File(...)):
+    """API dùng cho Frontend Dashboard để phân tích file offline (Diarization + Voice Biometrics)."""
+    temp_path = os.path.join("uploads", f"offline_{uuid.uuid4().hex[:6]}_{file.filename}")
+    with open(temp_path, "wb") as f:
+        f.write(await file.read())
+
+    print(f"\n[AI] Bắt đầu xử lý Biometrics cho file: {file.filename}")
+    # Lấy các mẫu giọng đăng ký từ SQL Server
+    speaker_refs = db.get_speaker_voice_paths()
+    
+    # Process Phân mảnh + Nhận diện giọng nói + Bóc băng
+    transcript = audio_processor.process_audio(temp_path, references=speaker_refs)
+    
+    # Tạo biên bản từ text
+    minutes_content = "Không tạo được do chưa nhận diện được text."
+    if transcript:
+        try:
+            minutes_content = llm_proc.generate_minutes(transcript)
+        except Exception as e:
+            minutes_content = f"Lỗi tạo biên bản: {str(e)}"
+
+    return {
+        "status": "ok",
+        "transcript": transcript,
+        "minutes": minutes_content
+    }
 
 # ================================================================
 # TEST & UTILS
